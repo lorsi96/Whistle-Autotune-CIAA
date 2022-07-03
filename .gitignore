@@ -53,3 +53,5 @@ dkms.conf
 
 # CIAA Output files
 out/
+.debug/
+.vscode/
