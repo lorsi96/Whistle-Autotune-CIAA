@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "gdb",
+            "request": "attach",
+            "name": "Attach to gdbserver",
+            "executable": "${workspaceRoot}/app/out/app.elf",
+            "target": "localhost:3333",
+            "remote": true,
+            "cwd": "${workspaceRoot}/app/out", 
+            "gdbpath": "/home/lorsi/CIAA/tools/gcc-arm-embedded/bin/arm-none-eabi-gdb",
+            "autorun": [
+                    "monitor halt",
+                    "break main"
+                ]
+        }
+    ]
+}
