@@ -1,4 +1,5 @@
 #!python3
+from typing import Optional
 import numpy as np
 import matplotlib.pyplot as plt
 from   matplotlib.animation import FuncAnimation
@@ -6,10 +7,14 @@ import os
 import io
 import serial
 import struct
+import simpleaudio as sa
 
 STREAM_FILE=("/dev/ttyUSB1","serial")
 #STREAM_FILE=("log.bin","file")
 
+tone_samps = np.zeros(10000)
+last_f = 0
+player: Optional[sa.PlayObject] = None
 header = { "head": b"head", "id": 0, "N": 128, "fs": 10000, "maxIndex":0, "maxValue":0,"matchedTone":0.0,"tail":b"tail" }
 fig    = plt.figure ( 1 )
 
@@ -87,12 +92,24 @@ def readSamples(adc,fft,N,trigger=False,th=0):
 
 def update(t):
     global header
+    global tone_samps
+    global player
+    global last_f
     flushStream ( streamFile,header )
     id,N,fs,maxIndex,maxValue,matchedTone=findHeader ( streamFile,header )
     adc     = np.zeros(N)
     ciaaFft = np.zeros(N).astype(complex)
     time    = np.arange(0,N/fs,1/fs)
     readSamples(adc,ciaaFft,N,False,0)
+
+    if matchedTone > 200:
+        if last_f == matchedTone and player.is_playing():
+            pass
+        else:
+            tone_samps = (2**15-1) * np.sin(2 * np.pi * matchedTone * np.arange(0, 10, 1/8000)) * np.sin(2 * np.pi * 10 * np.arange(0, 10, 1/8000))
+            if player is not None and player.is_playing():
+                player.stop()
+            player = sa.play_buffer(tone_samps.astype(np.int16), 1, 2, 8000)
 
     adcAxe.set_xlim ( 0    ,N/fs )
     adcLn.set_data  ( time ,adc  )

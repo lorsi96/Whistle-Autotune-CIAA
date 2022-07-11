@@ -70,9 +70,9 @@ int main ( void ) {
       arm_cmplx_mag_squared_q15 ( fftOut ,fftMag		  ,header.N/2+1						  );
       arm_max_q15			   ( fftMag ,header.N/2+1 ,&header.maxValue ,&header.maxIndex );
       header.matchedTone = psf_closest_tune(
-         header.maxIndex * 10000.0 / header.N, 
-         CHROMATIC_SCALE, 
-         sizeof(CHROMATIC_SCALE)/sizeof(CHROMATIC_SCALE[0])
+         header.maxIndex * 62.857, 
+         C_MAJOR_SCALE, 
+         sizeof(C_MAJOR_SCALE)/sizeof(C_MAJOR_SCALE[0])
       );
       header.id++;
       uartWriteByteArray ( UART_USB ,(uint8_t*)&header ,sizeof(struct header_struct ));
