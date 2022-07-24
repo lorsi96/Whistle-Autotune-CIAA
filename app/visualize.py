@@ -4,18 +4,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 from   matplotlib.animation import FuncAnimation
 import os
+import sys
 import io
 import serial
 import struct
 import simpleaudio as sa
 
+outfile = "somefile.txt"
+sys.stdout = open(outfile, "w")
+
 STREAM_FILE=("/dev/ttyUSB1","serial")
 #STREAM_FILE=("log.bin","file")
 
-tone_samps = np.zeros(10000)
+
+tone_samps = np.zeros(8000)
 last_f = 0
 player: Optional[sa.PlayObject] = None
-header = { "head": b"head", "id": 0, "N": 128, "fs": 10000, "maxIndex":0, "maxValue":0,"matchedTone":0.0,"tail":b"tail" }
+header = { "head": b"head", "id": 0, "N": 128, "fs": 8000, "maxIndex":0, "maxValue":0,"matchedTone":0.0,"tail":b"tail" }
 fig    = plt.figure ( 1 )
 
 adcAxe = fig.add_subplot ( 2,1,1                            )
@@ -52,7 +57,7 @@ def findHeader(f,h):
             data[:]=data[-4:]
         find = data==h["tail"]
 
-    print({k:round(v,2) if isinstance(v,float) else v for k,v in h.items()})
+    print(f'{h["matchedTone"]},{h["maxValue"]}')
     return h["id"],h["N"],h["fs"],h["maxIndex"],h["maxValue"],h["matchedTone"]
 
 def readInt4File(f,size=2,sign=False):
@@ -107,9 +112,9 @@ def update(t):
             pass
         else:
             tone_samps = (2**15-1) * maxValue / 0.2 * np.sin(2 * np.pi * matchedTone * np.arange(0, 10, 1/8000)) 
-            if player is not None and player.is_playing():
-                player.stop()
-            player = sa.play_buffer(tone_samps.astype(np.int16), 1, 2, 8000)
+            #if player is not None and player.is_playing():
+            #    player.stop()
+            #player = sa.play_buffer(tone_samps.astype(np.int16), 1, 2, 8000)
 
     adcAxe.set_xlim ( 0    ,N/fs )
     adcLn.set_data  ( time ,adc  )
@@ -131,7 +136,7 @@ if(STREAM_FILE[1]=="serial"):
 else:
     streamFile=open(STREAM_FILE[0],"rb",0)
 
-ani=FuncAnimation(fig,update,10000,init_func=None,blit=True,interval=1,repeat=True)
+ani=FuncAnimation(fig,update,8000,init_func=None,blit=True,interval=1,repeat=True)
 plt.draw()
 plt.get_current_fig_manager().window.showMaximized() #para QT5
 plt.show()

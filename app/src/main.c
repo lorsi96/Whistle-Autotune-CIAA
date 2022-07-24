@@ -5,6 +5,8 @@
 
 #define MAX_TONES_N  120
 #define BITS 10						// cantidad de bits usado para cuantizar
+#define SAMPLING_FREQUENCY_HZ  8000
+
 uint32_t tick	= 0   ;
 uint16_t tone	= 100 ;
 uint16_t B		= 2500;
@@ -38,7 +40,16 @@ struct header_struct {
    char		pos[4];
 } __attribute__ ((packed));
 
-struct header_struct header={"head",0,128,10000,0,0,0.0,"tail"};
+struct header_struct header={
+   .pre="head",
+   .id=0,
+   .N=128,
+   .fs=SAMPLING_FREQUENCY_HZ,
+   .maxIndex=0,
+   .maxValue=0,
+   .matchedTone=0.0,
+   .pos="tail"
+};
 
 int main ( void ) {
    uint16_t sample = 0;
