@@ -106,7 +106,7 @@ def update(t):
         if last_f == matchedTone and player.is_playing():
             pass
         else:
-            tone_samps = (2**15-1) * np.sin(2 * np.pi * matchedTone * np.arange(0, 10, 1/8000)) * np.sin(2 * np.pi * 10 * np.arange(0, 10, 1/8000))
+            tone_samps = (2**15-1) * maxValue / 0.2 * np.sin(2 * np.pi * matchedTone * np.arange(0, 10, 1/8000)) 
             if player is not None and player.is_playing():
                 player.stop()
             player = sa.play_buffer(tone_samps.astype(np.int16), 1, 2, 8000)
