@@ -1,7 +1,7 @@
 
-#include "arm_const_structs.h"
-#include "arm_math.h"
 #include "sapi.h"
+#include "arm_math.h"
+#include "arm_const_structs.h"
 #include "tone_frequencies.h"
 
 #define MAX_TONES_N 120
@@ -23,7 +23,7 @@ void PSFSignal_compute(PSFSignal_t* self) {
     arm_rfft_init_q15(&self->S, BATCH_SAMPLES_N, /*ifftFlag=*/0, /*bitRev=*/1);
     arm_rfft_q15(&self->S, self->signal, self->fft_real_cmplx);
     arm_cmplx_mag_squared_q15(self->fft_real_cmplx, self->fft_mag_real,
-                              BATCH_SAMPLES_N);
+                              BATCH_SAMPLES_N / 2 + 1);
     arm_max_q15(self->fft_mag_real, BATCH_SAMPLES_N / 2 + 1,
                 &self->fft_max_value, &self->fft_max_ind);
 }
@@ -88,21 +88,13 @@ void psf_hardware_init() {
     cyclesCounterInit(EDU_CIAA_NXP_CLOCK_SPEED);
 }
 
-#define PSF_LOOP(code)                                           \
-    do {                                                         \
-        cyclesCounterReset();                                    \
-        { code }                                                 \
-        while (cyclesCounterRead() <                             \
-               EDU_CIAA_NXP_CLOCK_SPEED / SAMPLING_FREQUENCY_HZ) \
-            ;                                                    \
-    } while (true);
-
 int main(void) {
     uint16_t sample = 0;
     PSFSignal_t ciaa_signal;
     uint16_t* adc = ciaa_signal.signal;
     psf_hardware_init();
-    PSF_LOOP(
+    while(true) {
+      cyclesCounterReset();
       adc[sample] = (((int16_t)adcRead(CH1) - 512) << 6); 
       if (++sample == header.N) {
         sample = 0;
@@ -110,11 +102,13 @@ int main(void) {
         header.maxValue = ciaa_signal.fft_max_value;
         header.maxIndex = ciaa_signal.fft_max_ind;
         header.matchedTone =
-            psf_closest_tune(header.maxIndex * 62.857 / 2, C_MAJOR_SCALE,
+        psf_closest_tune(header.maxIndex * 62.857, C_MAJOR_SCALE,
                              sizeof(C_MAJOR_SCALE) / sizeof(C_MAJOR_SCALE[0]));
         header.id++;
         uartWriteByteArray(UART_USB, (uint8_t*)&header,
                            sizeof(struct header_struct));
         adcRead(CH1);
-    });
+      }
+      while (cyclesCounterRead() < EDU_CIAA_NXP_CLOCK_SPEED / SAMPLING_FREQUENCY_HZ);   
+    }
 }
