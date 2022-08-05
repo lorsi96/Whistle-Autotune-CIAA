@@ -1,14 +1,9 @@
-from enum import Enum, auto
 import time
 import numpy as np
 import matplotlib.pyplot as plt
 import simpleaudio as sa
 
 FILE = "somefile.txt"
-
-class State(Enum):
-    SILENT = auto()
-    PLAYING = auto()
 
 class Sample:
     tone: float
@@ -19,21 +14,31 @@ class Sample:
         self.tone = float(tone)
         self.amp = float(amp)
 
+def smooth_data_convolve_my_average(arr, span):
+    re = np.convolve(arr, np.ones(span * 2 + 1) / (span * 2 + 1), mode="same")
+    re[0] = np.average(arr[:span])
+    for i in range(1, span + 1):
+        re[i] = np.average(arr[:i + span])
+        re[-i] = np.average(arr[-i - span:])
+    return re
 
-state = State(State.SILENT)
-samples = []
 
 with open(FILE, 'rt') as f:
     samples = (Sample(l) for l in f.readlines()) 
 
 music = []
+g_last_tone = 0
 
 def gen_tone(f, samples, sr= 8000):
+    global g_last_tone
     if samples == 0:
         return []
     if f < 50:
-        return np.zeros(samples * 128)
-    return (np.sin(2 * np.pi * f * np.arange(0, samples * 512 / sr, 1/sr))) * (2**15)
+        ff = g_last_tone
+    else:
+        ff = f
+    g_last_tone = ff
+    return (np.sin(2 * np.pi * ff / 2 * np.arange(0, samples * 128 / sr, 1/sr))) * (2**15)
 
 last_tone = 0
 sample_count = 0
@@ -45,11 +50,13 @@ for sample in samples:
         sample_count = 0
     else:
         sample_count += 1
-    
-#plt.plot(np.arange(len(music)) * 1/10000, music)
+        
+music_filter = smooth_data_convolve_my_average(music, 2)
+
+#plt.plot(music)
+#plt.plot(music_filter)
 #plt.show()
 
-sig = ((2**15 - 1) * np.sin(2 * np.pi * 440 * np.arange(0, 1, 1/8000))).astype(np.int16)
 
 player = sa.play_buffer(np.array(music).astype(np.int16), 1, 2, 8000)
 while player.is_playing():
