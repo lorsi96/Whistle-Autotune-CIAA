@@ -6,9 +6,8 @@
 
 #define MAX_TONES_N 120
 #define SAMPLING_FREQUENCY_HZ 8000
-#define ZERO_PADDING_SAMPS 128
-
-#define BATCH_SAMPLES_N 128
+#define BATCH_SAMPLES_N 256
+#define RESOLUTION_HZ  (SAMPLING_FREQUENCY_HZ / BATCH_SAMPLES_N)
 
 typedef struct {
     arm_rfft_instance_q15 S;
@@ -27,6 +26,8 @@ void PSFSignal_compute(PSFSignal_t* self) {
     arm_max_q15(self->fft_mag_real, BATCH_SAMPLES_N / 2 + 1,
                 &self->fft_max_value, &self->fft_max_ind);
 }
+
+
 
 /**
  * @brief
@@ -102,7 +103,7 @@ int main(void) {
         header.maxValue = ciaa_signal.fft_max_value;
         header.maxIndex = ciaa_signal.fft_max_ind;
         header.matchedTone =
-        psf_closest_tune(header.maxIndex * 62.857, C_MAJOR_SCALE,
+        psf_closest_tune(header.maxIndex * RESOLUTION_HZ, C_MAJOR_SCALE,
                              sizeof(C_MAJOR_SCALE) / sizeof(C_MAJOR_SCALE[0]));
         header.id++;
         uartWriteByteArray(UART_USB, (uint8_t*)&header,
