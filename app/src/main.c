@@ -27,8 +27,6 @@ void PSFSignal_compute(PSFSignal_t* self) {
                 &self->fft_max_value, &self->fft_max_ind);
 }
 
-
-
 /**
  * @brief
  *
@@ -36,13 +34,14 @@ void PSFSignal_compute(PSFSignal_t* self) {
  * @param tunes_hz
  * @param tunes_sz
  */
-float psf_closest_tune(float freq_hz, float* tunes_hz, uint32_t tunes_sz) {
+float psf_closest_tune(float freq_hz, float* tunes_hz, uint32_t tunes_sz, uint32_t* tone_index) {
     static float diff_vector[MAX_TONES_N];
     float res;
     uint32_t ind;
     arm_offset_f32(tunes_hz, -freq_hz, diff_vector, tunes_sz);
     arm_abs_f32(diff_vector, diff_vector, tunes_sz);
     arm_min_f32(diff_vector, tunes_sz, &res, &ind);
+    *tone_index = ind;
     return tunes_hz[ind];
 }
 
@@ -54,6 +53,7 @@ struct header_struct {
     uint32_t maxIndex;  // indexador de maxima energia por cada fft
     q15_t maxValue;     // maximo valor de energia del bin por cada fft
     float matchedTone;
+    uint32_t toneIndex;
     char pos[4];
 } __attribute__((packed));
 
@@ -93,6 +93,7 @@ int main(void) {
     uint16_t sample = 0;
     PSFSignal_t ciaa_signal;
     uint16_t* adc = ciaa_signal.signal;
+    uint32_t idx;
     psf_hardware_init();
     while(true) {
       cyclesCounterReset();
@@ -104,7 +105,8 @@ int main(void) {
         header.maxIndex = ciaa_signal.fft_max_ind;
         header.matchedTone =
         psf_closest_tune(header.maxIndex * RESOLUTION_HZ, C_MAJOR_SCALE,
-                             sizeof(C_MAJOR_SCALE) / sizeof(C_MAJOR_SCALE[0]));
+                             sizeof(C_MAJOR_SCALE) / sizeof(C_MAJOR_SCALE[0]), &idx);
+        header.toneIndex = idx;
         header.id++;
         uartWriteByteArray(UART_USB, (uint8_t*)&header,
                            sizeof(struct header_struct));
