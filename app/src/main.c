@@ -1,40 +1,92 @@
+/**
+ * @file main.c
+ * @author Lucas Orsi (lorsi@itba.edu.ar)
+ * @brief Whistle tone detector application.
+ * @version 0.1
+ * @date 2022-08-15
+ * 
+ * @copyright Copyright (c) 2022 
+ */
 
+/* ************************************************************************* */
+/*                             Public Inclusions                             */
+/* ************************************************************************* */
 #include "sapi.h"
 #include "arm_math.h"
 #include "arm_const_structs.h"
 #include "tone_frequencies.h"
 
-#define MAX_TONES_N 120
-#define SAMPLING_FREQUENCY_HZ 8000
-#define BATCH_SAMPLES_N 256
-#define RESOLUTION_HZ  (SAMPLING_FREQUENCY_HZ / BATCH_SAMPLES_N)
+/* ************************************************************************* */
+/*                              Public constants                             */
+/* ************************************************************************* */
+#define TARGET_SCALE  C_MAJOR_SCALE
+#define MAX_TONES_N (sizeof(TARGET_SCALE) / sizeof(TARGET_SCALE[0]))
 
+#define PSF_BAUDRATE  460800
+#define SAMPLING_FREQUENCY_HZ 8000.0
+#define BATCH_SAMPLES_N 512
+#define PADDING_SAMPLES_N  0
+#define TOTAL_SAMPLES_N  (BATCH_SAMPLES_N + PADDING_SAMPLES_N)
+
+#define RESOLUTION_HZ  (SAMPLING_FREQUENCY_HZ / TOTAL_SAMPLES_N)
+
+/* ************************************************************************* */
+/*                                 Data Types                                */
+/* ************************************************************************* */
 typedef struct {
     arm_rfft_instance_q15 S;
-    int16_t signal[BATCH_SAMPLES_N];
-    q15_t fft_real_cmplx[2 * BATCH_SAMPLES_N];
-    q15_t fft_mag_real[BATCH_SAMPLES_N / 2 + 1];
+    int16_t signal[TOTAL_SAMPLES_N];
+    q15_t fft_real_cmplx[2 * TOTAL_SAMPLES_N];
+    q15_t fft_mag_real[TOTAL_SAMPLES_N / 2 + 1];
     q15_t fft_max_value;
     uint32_t fft_max_ind;
 } PSFSignal_t;
 
-void PSFSignal_compute(PSFSignal_t* self) {
-    arm_rfft_init_q15(&self->S, BATCH_SAMPLES_N, /*ifftFlag=*/0, /*bitRev=*/1);
+typedef struct {
+    char pre[4];
+    uint32_t id;        //!< Packet Id.
+    uint16_t N;         //!< Batch size.
+    uint16_t fs;        //!< Sampling frequency.
+    uint32_t maxIndex;  //!< Highest energy FFT Bin index.
+    q15_t maxValue;     //!< Highest energy FFT Bin value.
+    float matchedTone;  //!< Matched frequency of the given tonal scale.
+    uint32_t toneIndex; //!< Index of matched frequency in tonal scale array.
+    char pos[4];
+} __attribute__((packed)) PSF_DataPacket_t;
+
+/* ************************************************************************* */
+/*                                 Functions                                 */
+/* ************************************************************************* */
+
+/* ************************** PSF Signal Functions ************************* */
+
+/**
+ * @brief Computes all fields of a given PSFSignal_t
+ * @details This includes complex & real fft, plus the latters max val and ind.
+ * @param[inout] self 
+ */
+void PSFSignal_update(PSFSignal_t* self) {
+    arm_rfft_init_q15(&self->S, TOTAL_SAMPLES_N, /*ifftFlag=*/0, /*bitRev=*/1);
     arm_rfft_q15(&self->S, self->signal, self->fft_real_cmplx);
     arm_cmplx_mag_squared_q15(self->fft_real_cmplx, self->fft_mag_real,
-                              BATCH_SAMPLES_N / 2 + 1);
-    arm_max_q15(self->fft_mag_real, BATCH_SAMPLES_N / 2 + 1,
+                              TOTAL_SAMPLES_N / 2 + 1);
+    arm_max_q15(self->fft_mag_real, TOTAL_SAMPLES_N / 2 + 1,
                 &self->fft_max_value, &self->fft_max_ind);
 }
 
+/* ******************************** PSF Lib ******************************** */
+
 /**
- * @brief
- *
- * @param freq_hz
- * @param tunes_hz
- * @param tunes_sz
+ * @brief Given a frequency values, finds the tune that's closest to it in a 
+ *        given tonal scale.
+ * 
+ * @param[in] freq_hz frequency to be matched to a scale.
+ * @param[in] tunes_hz list with frequencies belonging to a tonal scale.
+ * @param[in] tunes_sz size of tunes_hz list.
+ * @param[out] tone_index index of the matched tone in the tunes_hz list.   
+ * @return float  mateched frequency.
  */
-float psf_closest_tune(float freq_hz, float* tunes_hz, uint32_t tunes_sz, uint32_t* tone_index) {
+float PSFLib_closestTune(float freq_hz, float* tunes_hz, uint32_t tunes_sz, uint32_t* tone_index) {
     static float diff_vector[MAX_TONES_N];
     float res;
     uint32_t ind;
@@ -45,43 +97,12 @@ float psf_closest_tune(float freq_hz, float* tunes_hz, uint32_t tunes_sz, uint32
     return tunes_hz[ind];
 }
 
-struct header_struct {
-    char pre[4];
-    uint32_t id;
-    uint16_t N;
-    uint16_t fs;
-    uint32_t maxIndex;  // indexador de maxima energia por cada fft
-    q15_t maxValue;     // maximo valor de energia del bin por cada fft
-    float matchedTone;
-    uint32_t toneIndex;
-    char pos[4];
-} __attribute__((packed));
-
-struct header_struct header = {.pre = "head",
-                               .id = 0,
-                               .N = 128,
-                               .fs = SAMPLING_FREQUENCY_HZ,
-                               .maxIndex = 0,
-                               .maxValue = 0,
-                               .matchedTone = 0.0,
-                               .pos = "tail"};
-
-void psf_fft(q15_t* signalTimeSamps, q15_t* outBuff, uint32_t size) {
-    static arm_rfft_instance_q15 S;
-    static q15_t fftRealComplex[1024];
-    arm_rfft_init_q15(&S, size, /*ifftFlagR=*/0, /*bitReverseFlag=*/1);
-    arm_rfft_q15(&S, signalTimeSamps, fftRealComplex);
-    arm_cmplx_mag_squared_q15(fftRealComplex, outBuff, size);
-}
-
-void psf_get_main_freq_component(q15_t* timeSignalSamples, uint32_t size,
-                                 q15_t* maxValue, uint32_t* maxIndex) {
-    static q15_t realFftBuffer[1024];
-    psf_fft(timeSignalSamples, realFftBuffer, size);
-    arm_max_q15(realFftBuffer, size / 2 + 1, maxValue, maxIndex);
-}
-
-void psf_hardware_init() {
+/**
+ * @brief Hardware initialization function.
+ * @details Includes board, uart and ADC configuration.
+ * 
+ */
+void PSFLib_hardwareInit() {
     boardConfig();
     uartConfig(UART_USB, 460800);
     adcConfig(ADC_ENABLE);
@@ -89,27 +110,49 @@ void psf_hardware_init() {
     cyclesCounterInit(EDU_CIAA_NXP_CLOCK_SPEED);
 }
 
+/**
+ * @brief Acces header global instance.
+ * 
+ * @return PSF_DataPacket_t* global packet reference.
+ */
+PSF_DataPacket_t* PSFLib_getPacketHeader() {
+    static PSF_DataPacket_t header = {
+        .pre = "head",
+        .id = 0,
+        .N = BATCH_SAMPLES_N,
+        .fs = SAMPLING_FREQUENCY_HZ,
+        .maxIndex = 0,
+        .maxValue = 0,
+        .matchedTone = 0.0,
+        .pos = "tail"
+    };
+    return &header;
+}
+
+/* ************************************************************************* */
+/*                              Main Application                             */
+/* ************************************************************************* */
+
 int main(void) {
     uint16_t sample = 0;
     PSFSignal_t ciaa_signal;
-    uint16_t* adc = ciaa_signal.signal;
     uint32_t idx;
-    psf_hardware_init();
+    PSFLib_hardwareInit();
+    PSF_DataPacket_t* header = PSFLib_getPacketHeader();
     while(true) {
       cyclesCounterReset();
-      adc[sample] = (((int16_t)adcRead(CH1) - 512) << 6); 
-      if (++sample == header.N) {
-        sample = 0;
-        PSFSignal_compute(&ciaa_signal);
-        header.maxValue = ciaa_signal.fft_max_value;
-        header.maxIndex = ciaa_signal.fft_max_ind;
-        header.matchedTone =
-        psf_closest_tune(header.maxIndex * RESOLUTION_HZ, C_MAJOR_SCALE,
-                             sizeof(C_MAJOR_SCALE) / sizeof(C_MAJOR_SCALE[0]), &idx);
-        header.toneIndex = idx;
-        header.id++;
-        uartWriteByteArray(UART_USB, (uint8_t*)&header,
-                           sizeof(struct header_struct));
+      ciaa_signal.signal[sample++] = (((int16_t)adcRead(CH1) - 512) << 6); 
+      if(sample > header->N) sample = 0;
+      if (sample == (header->N / 16)) {
+        PSFSignal_update(&ciaa_signal);
+        header->maxValue = ciaa_signal.fft_max_value;
+        header->maxIndex = ciaa_signal.fft_max_ind;
+        header->matchedTone =
+        PSFLib_closestTune(header->maxIndex * RESOLUTION_HZ, TARGET_SCALE,
+                             MAX_TONES_N, &idx);
+        header->toneIndex = idx;
+        header->id++;
+        uartWriteByteArray(UART_USB, (uint8_t*)header, sizeof(PSF_DataPacket_t));
         adcRead(CH1);
       }
       while (cyclesCounterRead() < EDU_CIAA_NXP_CLOCK_SPEED / SAMPLING_FREQUENCY_HZ);   
