@@ -30,6 +30,10 @@
 
 #define RESOLUTION_HZ  (SAMPLING_FREQUENCY_HZ / TOTAL_SAMPLES_N)
 
+// #define USE_AGC  
+// #define USE_INTERPOLATOR
+
+
 /* ************************************************************************* */
 /*                                 Data Types                                */
 /* ************************************************************************* */
@@ -40,6 +44,7 @@ typedef struct {
     q15_t fft_mag_real[TOTAL_SAMPLES_N / 2 + 1];
     q15_t fft_max_value;
     uint32_t fft_max_ind;
+    float fft_max_f;
 } PSFSignal_t;
 
 typedef struct {
@@ -60,19 +65,58 @@ typedef struct {
 
 /* ************************** PSF Signal Functions ************************* */
 
+void PSFSignal_agc(PSFSignal_t* self) {
+    uint16_t max, gain_k;
+    uint32_t max_ind; // Unused.
+    arm_max_q15(self->signal, TOTAL_SAMPLES_N, &max, &max_ind);
+    gain_k = UINT16_MAX / max;
+    for(uint32_t i=0; i<TOTAL_SAMPLES_N; i++) {
+        self->signal[i] *= gain_k;
+    }
+}
+
+
 /**
  * @brief Computes all fields of a given PSFSignal_t
  * @details This includes complex & real fft, plus the latters max val and ind.
  * @param[inout] self 
  */
-void PSFSignal_update(PSFSignal_t* self) {
+void PSFSignal_fftCompute(PSFSignal_t* self) {
     arm_rfft_init_q15(&self->S, TOTAL_SAMPLES_N, /*ifftFlag=*/0, /*bitRev=*/1);
     arm_rfft_q15(&self->S, self->signal, self->fft_real_cmplx);
     arm_cmplx_mag_squared_q15(self->fft_real_cmplx, self->fft_mag_real,
                               TOTAL_SAMPLES_N / 2 + 1);
     arm_max_q15(self->fft_mag_real, TOTAL_SAMPLES_N / 2 + 1,
                 &self->fft_max_value, &self->fft_max_ind);
+    self->fft_max_f = self->fft_max_ind * RESOLUTION_HZ;
 }
+
+/**
+ * @brief Computes 
+ * 
+ */
+void PSFSignal_interpolUpdateMaxIndex(PSFSignal_t* self, uint32_t neighbors_n) {
+    int32_t bin_height;
+    int32_t cum_bin_height_ind=0;
+    int32_t cum_bin_height=0;
+
+    if(self->fft_max_ind + neighbors_n > TOTAL_SAMPLES_N) {
+        return; // No neighbors on the right!
+    }
+
+    if(self->fft_max_ind < neighbors_n) {
+        return; // No neighbors on the left!
+    }
+
+    for(uint8_t i=0; i<(2 * neighbors_n + 1); i++) {
+        uint32_t fft_bin = self->fft_max_ind - neighbors_n + i;
+        bin_height = self->fft_mag_real[fft_bin];
+        cum_bin_height += bin_height;
+        cum_bin_height_ind += bin_height * fft_bin;
+    }
+    self->fft_max_f = (cum_bin_height_ind / cum_bin_height) * RESOLUTION_HZ;
+}
+
 
 /* ******************************** PSF Lib ******************************** */
 
@@ -144,12 +188,17 @@ int main(void) {
       ciaa_signal.signal[sample++] = (((int16_t)adcRead(CH1) - 512) << 6); 
       if(sample > header->N) sample = 0;
       if (sample == (header->N / 16)) {
-        PSFSignal_update(&ciaa_signal);
+        #ifdef USE_AGC
+            PSFSignal_agc(&ciaa_signal);
+        #endif
+        PSFSignal_fftCompute(&ciaa_signal);
+        #ifdef USE_INTERPOLATOR
+            PSFSignal_interpolUpdateMaxIndex(&ciaa_signal, 2);
+        #endif
+        header->matchedTone = PSFLib_closestTune(
+            ciaa_signal.fft_max_f, TARGET_SCALE, MAX_TONES_N, &idx);
         header->maxValue = ciaa_signal.fft_max_value;
         header->maxIndex = ciaa_signal.fft_max_ind;
-        header->matchedTone =
-        PSFLib_closestTune(header->maxIndex * RESOLUTION_HZ, TARGET_SCALE,
-                             MAX_TONES_N, &idx);
         header->toneIndex = idx;
         header->id++;
         uartWriteByteArray(UART_USB, (uint8_t*)header, sizeof(PSF_DataPacket_t));

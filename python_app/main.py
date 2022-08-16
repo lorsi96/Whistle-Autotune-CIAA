@@ -1,6 +1,6 @@
 import pygame as pg
 from ciaa_utils import CIAACollector, CIAADataSource
-from music_utils import gen_waveforms, gen_squarewave, C_MAJOR_TABLE
+from music_utils import gen_waveforms, gen_squarewave, C_MAJOR_TABLE, print_tone
 
 SAMPLE_WIDTH = 16
 FPS = 44100
@@ -28,6 +28,7 @@ if __name__ == '__main__':
         if last != tne and tne != 0:
             sounds[last].fadeout(1)
             sounds[tne].play()
-            print(C_MAJOR_TABLE[tne])
+            # print(C_MAJOR_TABLE[tne])
+            print_tone(C_MAJOR_TABLE[tne])
             last = tne
 
