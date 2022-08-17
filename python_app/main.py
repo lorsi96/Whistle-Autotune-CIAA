@@ -29,6 +29,6 @@ if __name__ == '__main__':
             sounds[last].fadeout(1)
             sounds[tne].play()
             # print(C_MAJOR_TABLE[tne])
-            print_tone(C_MAJOR_TABLE[tne])
+            # print_tone(C_MAJOR_TABLE[tne])
             last = tne
 
