@@ -195,7 +195,7 @@ int main(void) {
       cyclesCounterReset();
       ciaa_signal.signal[sample++] = (((int16_t)adcRead(CH1) - 512) << 6); 
       if(sample > header->N) sample = 0;
-      if (sample == (header->N / 16)) {
+      if (sample == (header->N)) {
         #ifdef USE_AGC
             PSFSignal_agc(&ciaa_signal);
         #endif
