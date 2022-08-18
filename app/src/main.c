@@ -15,6 +15,7 @@
 #include "arm_math.h"
 #include "arm_const_structs.h"
 #include "tone_frequencies.h"
+#include "fir_bandpass.h"
 
 /* ************************************************************************* */
 /*                              Public constants                             */
@@ -32,6 +33,7 @@
 
 // #define USE_AGC  
 // #define USE_INTERPOLATOR
+#define USE_BP_FILTER
 
 
 /* ************************************************************************* */
@@ -40,6 +42,8 @@
 typedef struct {
     arm_rfft_instance_q15 S;
     int16_t signal[TOTAL_SAMPLES_N];
+    int16_t signal_filtered[TOTAL_SAMPLES_N];
+    int16_t* target_signal;
     q15_t fft_real_cmplx[2 * TOTAL_SAMPLES_N];
     q15_t fft_mag_real[TOTAL_SAMPLES_N / 2 + 1];
     q15_t fft_max_value;
@@ -75,6 +79,10 @@ void PSFSignal_agc(PSFSignal_t* self) {
     }
 }
 
+void PSFSignal_applyBandpassFilter(PSFSignal_t* self) {
+    arm_conv_q15(self->signal, TOTAL_SAMPLES_N, h, h_LENGTH, 
+                 self->signal_filtered);
+}
 
 /**
  * @brief Computes all fields of a given PSFSignal_t
@@ -83,7 +91,7 @@ void PSFSignal_agc(PSFSignal_t* self) {
  */
 void PSFSignal_fftCompute(PSFSignal_t* self) {
     arm_rfft_init_q15(&self->S, TOTAL_SAMPLES_N, /*ifftFlag=*/0, /*bitRev=*/1);
-    arm_rfft_q15(&self->S, self->signal, self->fft_real_cmplx);
+    arm_rfft_q15(&self->S, self->target_signal, self->fft_real_cmplx);
     arm_cmplx_mag_squared_q15(self->fft_real_cmplx, self->fft_mag_real,
                               TOTAL_SAMPLES_N / 2 + 1);
     arm_max_q15(self->fft_mag_real, TOTAL_SAMPLES_N / 2 + 1,
@@ -190,6 +198,12 @@ int main(void) {
       if (sample == (header->N / 16)) {
         #ifdef USE_AGC
             PSFSignal_agc(&ciaa_signal);
+        #endif
+        #ifdef USE_BP_FILTER
+            PSFSignal_applyBandpassFilter(&ciaa_signal);
+            ciaa_signal.target_signal = ciaa_signal.signal_filtered;
+        #else
+            ciaa_signal.target_signal = ciaa_signal.signal;
         #endif
         PSFSignal_fftCompute(&ciaa_signal);
         #ifdef USE_INTERPOLATOR
